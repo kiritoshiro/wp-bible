@@ -6,6 +6,8 @@
  * Version:     1.1.3
  * Author:      Bible Plugin
  * Text Domain: bible
+ * Requires at least: 6.2
+ * Requires PHP: 7.4
  * Update URI:  https://github.com/kiritoshiro/wp-bible
  * License:     GPL-2.0+
  */
