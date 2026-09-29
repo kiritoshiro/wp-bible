@@ -21,9 +21,12 @@ class Bible_Ajax {
      *   mode         (optional) – "cross_chapter" for cross-chapter verse ranges
      */
     public function get_verse() {
+        // Public, read-only verse lookup: no authenticated state is changed.
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended
         foreach ( array( 'book_number', 'chapter', 'verse_start', 'verse_end', 'chapter_end', 'verse_end_ch' ) as $key ) {
             if ( isset( $_GET[$key] ) && $_GET[$key] !== '' &&
-                ( ! is_scalar( $_GET[$key] ) || ! preg_match( '/^[0-9]{1,5}$/D', (string) $_GET[$key] ) ||
+                // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Strict digit grammar and range validation, not lossy text sanitization.
+                ( ! is_scalar( $_GET[$key] ) || ! preg_match( '/^[0-9]{1,5}$/D', (string) wp_unslash( $_GET[$key] ) ) ||
                   intval( $_GET[$key] ) < 1 || intval( $_GET[$key] ) > 10000 ) ) {
                 wp_send_json_error( array( 'message' => 'Invalid reference' ), 400 );
             }
@@ -37,7 +40,9 @@ class Bible_Ajax {
         $verse_end    = isset( $_GET['verse_end'] ) && $_GET['verse_end'] !== '' ? intval( $_GET['verse_end'] ) : null;
         $chapter_end  = isset( $_GET['chapter_end'] ) && $_GET['chapter_end'] !== '' ? intval( $_GET['chapter_end'] ) : null;
         $verse_end_ch = isset( $_GET['verse_end_ch'] ) && $_GET['verse_end_ch'] !== '' ? intval( $_GET['verse_end_ch'] ) : null;
-        $mode         = isset( $_GET['mode'] ) ? sanitize_text_field( $_GET['mode'] ) : '';
+        $mode         = isset( $_GET['mode'] ) ? sanitize_text_field( wp_unslash( $_GET['mode'] ) ) : '';
+
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
 
         if ( ! $book_number || ! $chapter ) {
             wp_send_json_error( array( 'message' => 'Netinkama nuoroda / Invalid reference' ) );

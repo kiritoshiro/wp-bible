@@ -38,7 +38,8 @@ class Bible_Admin {
 
         check_admin_referer( 'bible_export_nonce' );
 
-        $type = in_array( $_GET['bible_export'], array( 'aliases', 'all' ), true ) ? $_GET['bible_export'] : 'aliases';
+        $requested_type = is_string( $_GET['bible_export'] ) ? sanitize_key( wp_unslash( $_GET['bible_export'] ) ) : '';
+        $type = in_array( $requested_type, array( 'aliases', 'all' ), true ) ? $requested_type : 'aliases';
 
         $export = array(
             'plugin'     => 'bible',
@@ -67,6 +68,8 @@ class Bible_Admin {
      * Handle form submissions
      */
     private static function uploaded_file( $key, $extension, $limit ) {
+        // Called only after capability and action-specific nonce checks; upload metadata is validated below.
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
         $file = $_FILES[$key] ?? null;
         if ( ! is_array( $file ) || ( $file['error'] ?? UPLOAD_ERR_NO_FILE ) !== UPLOAD_ERR_OK ||
             ! is_string( $file['tmp_name'] ?? null ) || ! is_string( $file['name'] ?? null ) ||
@@ -114,7 +117,7 @@ class Bible_Admin {
 
     public function handle_actions() {
         // A valid nonce is not permission to manage site settings.
-        if ( ! current_user_can( 'manage_options' ) || ( $_SERVER['REQUEST_METHOD'] ?? '' ) !== 'POST' ) return;
+        if ( ! current_user_can( 'manage_options' ) || sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ?? '' ) ) !== 'POST' ) return;
 
         if ( isset( $_POST['bible_save_settings'] ) ) {
             check_admin_referer( 'bible_settings_nonce' );
@@ -141,7 +144,7 @@ class Bible_Admin {
                 return;
             }
             $aliases = self::normalize_aliases( $data['aliases'] ?? array() );
-            if ( ! is_wp_error( $aliases ) && ( $_POST['import_mode'] ?? '' ) !== 'replace' ) {
+            if ( ! is_wp_error( $aliases ) && sanitize_key( wp_unslash( $_POST['import_mode'] ?? '' ) ) !== 'replace' ) {
                 $existing = get_option( 'bible_custom_aliases', array() );
                 $aliases = self::normalize_aliases( array_merge( is_array( $existing ) ? $existing : array(), $aliases ) );
             }
@@ -156,8 +159,11 @@ class Bible_Admin {
         if ( isset( $_POST['bible_save_aliases'] ) ) {
             check_admin_referer( 'bible_aliases_nonce' );
             $aliases = array();
+            // normalize_aliases validates types, length and book membership before saving.
+            // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
             $texts = wp_unslash( $_POST['alias_text'] ?? array() );
-            $numbers = $_POST['alias_book'] ?? array();
+            // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Strictly validated by normalize_aliases below.
+            $numbers = wp_unslash( $_POST['alias_book'] ?? array() );
             if ( ! is_array( $texts ) || ! is_array( $numbers ) || count( $texts ) > 2000 ) {
                 add_settings_error( 'bible_messages', 'bible_error', 'Invalid aliases.', 'error' );
                 return;
@@ -330,10 +336,10 @@ class Bible_Admin {
                         <h3>📤 Eksportuoti</h3>
                         <p>Atsisiųskite .json failą, kurį galėsite importuoti kitoje svetainėje.</p>
                         <div class="bible-export-buttons">
-                            <a href="<?php echo wp_nonce_url( admin_url( 'admin.php?page=bible-patterns&bible_export=aliases' ), 'bible_export_nonce' ); ?>" class="button">
+                            <a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin.php?page=bible-patterns&bible_export=aliases' ), 'bible_export_nonce' ) ); ?>" class="button">
                                 Eksportuoti šablonus
                             </a>
-                            <a href="<?php echo wp_nonce_url( admin_url( 'admin.php?page=bible-patterns&bible_export=all' ), 'bible_export_nonce' ); ?>" class="button">
+                            <a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin.php?page=bible-patterns&bible_export=all' ), 'bible_export_nonce' ) ); ?>" class="button">
                                 Eksportuoti viską (šablonai + nustatymai)
                             </a>
                         </div>
@@ -364,20 +370,20 @@ class Bible_Admin {
                     $bn = intval( $b['book_number'] );
                     $book_aliases = isset( $grouped[ $bn ] ) ? $grouped[ $bn ] : array();
                 ?>
-                <div class="bible-book-group" data-book="<?php echo $bn; ?>">
+                <div class="bible-book-group" data-book="<?php echo (int) $bn; ?>">
                     <div class="bible-book-header">
                         <span class="bible-book-badge" style="background-color: <?php echo esc_attr( sanitize_hex_color( $b['book_color'] ) ?: '' ); ?>">
                             <?php echo esc_html( $b['short_name'] ); ?>
                         </span>
                         <strong><?php echo esc_html( $b['long_name'] ); ?></strong>
-                        <span class="bible-book-num">(#<?php echo $bn; ?>)</span>
+                        <span class="bible-book-num">(#<?php echo (int) $bn; ?>)</span>
                         <span class="bible-alias-count"><?php echo count( $book_aliases ); ?> alias<?php echo count( $book_aliases ) !== 1 ? 'ų' : ''; ?></span>
-                        <button type="button" class="button button-small bible-add-alias-btn" data-book="<?php echo $bn; ?>" title="Pridėti alias šiai knygai">+ Pridėti</button>
+                        <button type="button" class="button button-small bible-add-alias-btn" data-book="<?php echo (int) $bn; ?>" title="Pridėti alias šiai knygai">+ Pridėti</button>
                     </div>
                     <div class="bible-alias-rows">
                         <?php foreach ( $book_aliases as $alias_text ) : ?>
                             <div class="bible-alias-row">
-                                <input type="hidden" name="alias_book[]" value="<?php echo $bn; ?>">
+                                <input type="hidden" name="alias_book[]" value="<?php echo (int) $bn; ?>">
                                 <input type="text" name="alias_text[]" value="<?php echo esc_attr( $alias_text ); ?>" class="regular-text bible-alias-input" placeholder="Alias...">
                                 <button type="button" class="button button-small bible-remove-row" title="Šalinti">✕</button>
                             </div>
@@ -418,7 +424,7 @@ class Bible_Admin {
                     <h3>Pridėti naują alias bet kuriai knygai</h3>
                     <div class="bible-new-alias-row">
                         <input type="text" id="bible-new-alias-text" class="regular-text" placeholder="Alias tekstas, pvz. Pradžios knyga">
-                        <select id="bible-new-alias-book"><?php echo $opts_html; ?></select>
+                        <select id="bible-new-alias-book"><?php echo wp_kses( $opts_html, array( 'option' => array( 'value' => true ) ) ); ?></select>
                         <button type="button" class="button" id="bible-add-new-alias">+ Pridėti</button>
                     </div>
                 </div>

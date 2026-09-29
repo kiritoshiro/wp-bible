@@ -126,7 +126,7 @@ class Bible_DB {
             }
             $transaction = true;
             foreach ( array( 'bible_books', 'bible_verses' ) as $table ) {
-                if ( false === $wpdb->query( "DELETE FROM {$wpdb->prefix}$table" ) ) {
+                if ( false === $wpdb->query( $wpdb->prepare( "DELETE FROM %i", $wpdb->prefix . $table ) ) ) {
                     throw new RuntimeException( 'Database write failed.' );
                 }
             }
@@ -177,6 +177,7 @@ class Bible_DB {
     private static function insert_verse_batch( $batch ) {
         global $wpdb;
         if ( false === $wpdb->query(
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Every tuple is prepared in import_sqlite_module; table prefix is trusted WP configuration.
             "INSERT INTO {$wpdb->prefix}bible_verses (book_number, chapter, verse, text) VALUES " . implode( ',', $batch )
         ) ) {
             throw new RuntimeException( 'Verse write failed.' );
