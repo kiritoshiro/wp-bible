@@ -1,0 +1,194 @@
+/* Bible Plugin – Admin Styles */
+
+.bible-admin-wrap {
+  max-width: 960px;
+}
+.bible-admin-wrap h1 .dashicons {
+  font-size: 28px;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+.bible-admin-card {
+  background: #fff;
+  border: 1px solid #c3c4c7;
+  border-radius: 4px;
+  padding: 20px 24px;
+  margin: 16px 0;
+  box-shadow: 0 1px 1px rgba(0,0,0,.04);
+}
+.bible-admin-card h2 {
+  margin-top: 0;
+  padding-top: 0;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+}
+.bible-admin-card .form-table th {
+  width: 200px;
+}
+
+/* ─── Book group (patterns page) ─── */
+.bible-book-group {
+  background: #fff;
+  border: 1px solid #dcdcde;
+  border-radius: 4px;
+  margin: 8px 0;
+  overflow: hidden;
+}
+.bible-book-group:hover {
+  border-color: #b4b4b8;
+}
+.bible-book-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: #f6f7f7;
+  border-bottom: 1px solid #eee;
+  flex-wrap: wrap;
+}
+.bible-book-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: monospace;
+  min-width: 40px;
+  text-align: center;
+  color: #333;
+}
+.bible-book-header strong {
+  font-size: 13px;
+  color: #1d2327;
+}
+.bible-book-num {
+  font-size: 11px;
+  color: #999;
+}
+.bible-alias-count {
+  font-size: 11px;
+  color: #666;
+  background: #e8e8e8;
+  padding: 1px 8px;
+  border-radius: 10px;
+  margin-left: auto;
+}
+.bible-add-alias-btn {
+  flex-shrink: 0;
+}
+
+/* ─── Alias rows ─── */
+.bible-alias-rows {
+  padding: 4px 14px 4px;
+}
+.bible-alias-rows:empty {
+  padding: 0;
+}
+.bible-alias-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+.bible-alias-row .bible-alias-input {
+  flex: 1;
+  max-width: 350px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+.bible-alias-row.bible-alias-new .bible-alias-input {
+  border-color: #46b450;
+  background: #f7fff7;
+}
+.bible-remove-row {
+  color: #b32d2e !important;
+  border-color: #b32d2e !important;
+  flex-shrink: 0;
+}
+.bible-remove-row:hover {
+  background: #fef1f1 !important;
+}
+
+/* ─── Orphan aliases ─── */
+.bible-orphans {
+  border-color: #e74c3c;
+}
+.bible-orphans .bible-book-header {
+  background: #fef1f1;
+}
+.bible-orphan-note {
+  font-size: 11px;
+  color: #e74c3c;
+  font-style: italic;
+}
+
+/* ─── Add new alias section ─── */
+.bible-add-new-section {
+  background: #f9fafb;
+  border: 2px dashed #c3c4c7;
+}
+.bible-add-new-section h3 {
+  margin-top: 0;
+  font-size: 14px;
+}
+.bible-new-alias-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.bible-new-alias-row input[type="text"] {
+  min-width: 200px;
+}
+.bible-new-alias-row select {
+  min-width: 250px;
+}
+
+/* ─── Export / Import ─── */
+.bible-export-import-card {
+  background: #f9fafb;
+}
+.bible-export-import-card h2 {
+  border-bottom-color: #c3c4c7;
+}
+.bible-export-import-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+@media (max-width: 782px) {
+  .bible-export-import-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.bible-export-section,
+.bible-import-section {
+  background: #fff;
+  border: 1px solid #dcdcde;
+  border-radius: 4px;
+  padding: 16px 20px;
+}
+.bible-export-section h3,
+.bible-import-section h3 {
+  margin-top: 0;
+  font-size: 14px;
+}
+.bible-export-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.bible-import-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bible-import-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bible-import-mode label {
+  font-size: 13px;
+}

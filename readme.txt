@@ -1,0 +1,41 @@
+=== Bible ===
+Contributors: bibleplugin
+Tags: bible, verses, popup, lithuanian, references
+Requires at least: 5.0
+Tested up to: 6.7
+Requires PHP: 7.4
+Stable tag: 1.1.2
+License: GPLv2 or later
+
+Automatically detects Bible verse references on your WordPress site and shows a popup with the verse text.
+
+== Description ==
+
+Bible plugin scans your site content for Bible references and makes them interactive with popups.
+
+= Supported reference formats =
+
+* `Pr 11,22` — Book chapter,verse
+* `Pr 25,7-8` — Verse range
+* `2 Kar 23,35-24,7` — Cross-chapter verse range
+* `1 Sam 14` — Whole chapter
+* `1 Samuelio knygos 4-6 skyriuose` — Chapter range
+* `(2 Kar 15:27-31; 16:5-9)` — Continuation (same book)
+* `2 Kar 23:34; 2 Met 36:4` — Separate references
+* `Mal 3,1-6; 3,13-4,3` — Continuation with cross-chapter range
+* `Teisėjų 3,14` — Full Lithuanian names
+
+== Changelog ==
+
+= 1.1.2 =
+* Added updates from GitHub Releases. Private repositories require a read-only GitHub token in wp-config.php.
+
+= 1.1.0 =
+* Cross-chapter verse ranges (e.g. 2 Kar 23,35-24,7)
+* Fixed semicolon handling: new book after ; recognized correctly
+* Fixed continuation cross-chapter ranges (e.g. Mal 3,1-6; 3,13-4,3)
+* Redesigned patterns page with book grouping and sorting
+* Updated default module
+
+= 1.0.0 =
+* Initial release
