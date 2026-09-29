@@ -38,7 +38,7 @@ class Bible_Admin {
 
         check_admin_referer( 'bible_export_nonce' );
 
-        $type = sanitize_text_field( $_GET['bible_export'] );
+        $type = in_array( $_GET['bible_export'], array( 'aliases', 'all' ), true ) ? $_GET['bible_export'] : 'aliases';
 
         $export = array(
             'plugin'     => 'bible',
@@ -66,128 +66,112 @@ class Bible_Admin {
     /**
      * Handle form submissions
      */
+    private static function uploaded_file( $key, $extension, $limit ) {
+        $file = $_FILES[$key] ?? null;
+        if ( ! is_array( $file ) || ( $file['error'] ?? UPLOAD_ERR_NO_FILE ) !== UPLOAD_ERR_OK ||
+            ! is_string( $file['tmp_name'] ?? null ) || ! is_string( $file['name'] ?? null ) ||
+            ! is_uploaded_file( $file['tmp_name'] ) ||
+            strtolower( pathinfo( $file['name'], PATHINFO_EXTENSION ) ) !== $extension ||
+            filesize( $file['tmp_name'] ) > $limit || filesize( $file['tmp_name'] ) < 1 ) {
+            return new WP_Error( 'invalid_upload', 'Invalid upload, extension, or file size.' );
+        }
+        return $file;
+    }
+
+    private static function normalize_settings( $settings ) {
+        $settings = is_array( $settings ) ? $settings : array();
+        return array(
+            'enabled' => ( $settings['enabled'] ?? '0' ) === '1' ? '1' : '0',
+            'popup_trigger' => ( $settings['popup_trigger'] ?? '' ) === 'click' ? 'click' : 'hover',
+            'popup_maxwidth' => is_scalar( $settings['popup_maxwidth'] ?? null ) ?
+                max( 200, min( 800, intval( $settings['popup_maxwidth'] ) ) ) : 450,
+        );
+    }
+
+    private static function normalize_aliases( $aliases ) {
+        $clean = array();
+        if ( ! is_array( $aliases ) || count( $aliases ) > 2000 ) {
+            return new WP_Error( 'invalid_aliases', 'Expected at most 2000 aliases.' );
+        }
+        $books = array_column( Bible_DB::get_books(), 'book_number' );
+        foreach ( $aliases as $alias ) {
+            if ( ! is_array( $alias ) || ! is_string( $alias['alias'] ?? null ) ||
+                strlen( $alias['alias'] ) > 200 || ! is_scalar( $alias['book_number'] ?? null ) ||
+                false === filter_var( $alias['book_number'], FILTER_VALIDATE_INT ) ||
+                ! in_array( intval( $alias['book_number'] ), $books ) ) {
+                return new WP_Error( 'invalid_aliases', 'Invalid alias or unknown book.' );
+            }
+            $text = trim( sanitize_text_field( $alias['alias'] ) );
+            $number = intval( $alias['book_number'] );
+            if ( $text !== '' ) $clean[$number . ':' . $text] = array( 'alias' => $text, 'book_number' => $number );
+        }
+        $clean = array_values( $clean );
+        usort( $clean, function( $a, $b ) {
+            return ( $a['book_number'] <=> $b['book_number'] ) ?: strcmp( $a['alias'], $b['alias'] );
+        } );
+        return $clean;
+    }
+
     public function handle_actions() {
-        // Save settings
-        if ( isset( $_POST['bible_save_settings'] ) && check_admin_referer( 'bible_settings_nonce' ) ) {
-            $settings = array(
-                'popup_trigger'  => sanitize_text_field( $_POST['popup_trigger'] ?? 'hover' ),
-                'enabled'        => isset( $_POST['enabled'] ) ? '1' : '0',
-                'popup_maxwidth' => intval( $_POST['popup_maxwidth'] ?? 450 ),
+        // A valid nonce is not permission to manage site settings.
+        if ( ! current_user_can( 'manage_options' ) || ( $_SERVER['REQUEST_METHOD'] ?? '' ) !== 'POST' ) return;
+
+        if ( isset( $_POST['bible_save_settings'] ) ) {
+            check_admin_referer( 'bible_settings_nonce' );
+            update_option( 'bible_settings', self::normalize_settings( wp_unslash( $_POST ) ) );
+            add_settings_error( 'bible_messages', 'bible_updated', 'Settings saved.', 'updated' );
+        }
+        if ( isset( $_POST['bible_upload_module'] ) ) {
+            check_admin_referer( 'bible_module_nonce' );
+            $file = self::uploaded_file( 'bible_module_file', 'sqlite3', 104857600 );
+            $result = is_wp_error( $file ) ? $file : Bible_DB::import_sqlite_module(
+                $file['tmp_name'], pathinfo( sanitize_file_name( $file['name'] ), PATHINFO_FILENAME )
             );
-            update_option( 'bible_settings', $settings );
-            add_settings_error( 'bible_messages', 'bible_updated', 'Nustatymai išsaugoti.', 'updated' );
+            // Import directly from PHP's temporary upload. Never publish or overwrite module files.
+            add_settings_error( 'bible_messages', 'bible_import',
+                is_wp_error( $result ) ? $result->get_error_message() : 'Imported verses: ' . $result,
+                is_wp_error( $result ) ? 'error' : 'updated' );
         }
-
-        // Upload module
-        if ( isset( $_POST['bible_upload_module'] ) && check_admin_referer( 'bible_module_nonce' ) ) {
-            if ( ! empty( $_FILES['bible_module_file']['tmp_name'] ) ) {
-                $filename = sanitize_file_name( $_FILES['bible_module_file']['name'] );
-                $ext = strtolower( pathinfo( $filename, PATHINFO_EXTENSION ) );
-
-                if ( $ext === 'sqlite3' ) {
-                    if ( ! file_exists( BIBLE_MODULES_DIR ) ) wp_mkdir_p( BIBLE_MODULES_DIR );
-
-                    $dest = BIBLE_MODULES_DIR . $filename;
-                    if ( move_uploaded_file( $_FILES['bible_module_file']['tmp_name'], $dest ) ) {
-                        $result = Bible_DB::import_sqlite_module( $dest, pathinfo( $filename, PATHINFO_FILENAME ) );
-                        if ( is_wp_error( $result ) ) {
-                            add_settings_error( 'bible_messages', 'bible_error', 'Klaida: ' . $result->get_error_message(), 'error' );
-                        } else {
-                            add_settings_error( 'bible_messages', 'bible_updated', "Modulis įkeltas! Importuota eilučių: {$result}", 'updated' );
-                        }
-                    } else {
-                        add_settings_error( 'bible_messages', 'bible_error', 'Nepavyko išsaugoti failo.', 'error' );
-                    }
-                } else {
-                    add_settings_error( 'bible_messages', 'bible_error', 'Netinkamas formatas. Įkelkite .SQLite3 failą.', 'error' );
-                }
+        if ( isset( $_POST['bible_import_aliases'] ) ) {
+            check_admin_referer( 'bible_import_nonce' );
+            $file = self::uploaded_file( 'bible_import_file', 'json', 1048576 );
+            $data = is_wp_error( $file ) ? null : json_decode( file_get_contents( $file['tmp_name'] ), true, 16 );
+            if ( ! is_array( $data ) || ( $data['plugin'] ?? '' ) !== 'bible' ) {
+                add_settings_error( 'bible_messages', 'bible_error', 'Invalid Bible JSON export.', 'error' );
+                return;
             }
-        }
-
-        // Import aliases from JSON
-        if ( isset( $_POST['bible_import_aliases'] ) && check_admin_referer( 'bible_import_nonce' ) ) {
-            if ( ! empty( $_FILES['bible_import_file']['tmp_name'] ) ) {
-                $json = file_get_contents( $_FILES['bible_import_file']['tmp_name'] );
-                $data = json_decode( $json, true );
-
-                if ( ! $data || ! isset( $data['plugin'] ) || $data['plugin'] !== 'bible' ) {
-                    add_settings_error( 'bible_messages', 'bible_error', 'Netinkamas failas. Tai nėra Bible plugino eksportas.', 'error' );
-                } else {
-                    $imported = 0;
-                    $mode = sanitize_text_field( $_POST['import_mode'] ?? 'merge' );
-
-                    if ( ! empty( $data['aliases'] ) && is_array( $data['aliases'] ) ) {
-                        if ( $mode === 'replace' ) {
-                            // Replace all aliases
-                            $aliases = $data['aliases'];
-                        } else {
-                            // Merge: add imported aliases, skip duplicates
-                            $existing = get_option( 'bible_custom_aliases', array() );
-                            $existing_keys = array();
-                            foreach ( $existing as $a ) {
-                                $existing_keys[ $a['alias'] . '|' . $a['book_number'] ] = true;
-                            }
-                            $aliases = $existing;
-                            foreach ( $data['aliases'] as $a ) {
-                                $key = $a['alias'] . '|' . $a['book_number'];
-                                if ( ! isset( $existing_keys[ $key ] ) ) {
-                                    $aliases[] = $a;
-                                    $imported++;
-                                }
-                            }
-                        }
-
-                        // Sort
-                        usort( $aliases, function( $a, $b ) {
-                            if ( $a['book_number'] !== $b['book_number'] ) {
-                                return $a['book_number'] - $b['book_number'];
-                            }
-                            return strcmp( $a['alias'], $b['alias'] );
-                        });
-
-                        update_option( 'bible_custom_aliases', $aliases );
-
-                        if ( $mode === 'replace' ) {
-                            add_settings_error( 'bible_messages', 'bible_updated',
-                                'Šablonai pakeisti! Importuota: ' . count( $data['aliases'] ) . ' alias(ų).', 'updated' );
-                        } else {
-                            add_settings_error( 'bible_messages', 'bible_updated',
-                                'Šablonai sujungti! Naujų pridėta: ' . $imported . '. Iš viso dabar: ' . count( $aliases ) . '.', 'updated' );
-                        }
-                    }
-
-                    // Also import settings if present and "all" export
-                    if ( ! empty( $data['settings'] ) && is_array( $data['settings'] ) ) {
-                        update_option( 'bible_settings', $data['settings'] );
-                        add_settings_error( 'bible_messages', 'bible_updated', 'Nustatymai taip pat importuoti.', 'updated' );
-                    }
-                }
-            } else {
-                add_settings_error( 'bible_messages', 'bible_error', 'Pasirinkite .json failą importui.', 'error' );
+            $aliases = self::normalize_aliases( $data['aliases'] ?? array() );
+            if ( ! is_wp_error( $aliases ) && ( $_POST['import_mode'] ?? '' ) !== 'replace' ) {
+                $existing = get_option( 'bible_custom_aliases', array() );
+                $aliases = self::normalize_aliases( array_merge( is_array( $existing ) ? $existing : array(), $aliases ) );
             }
+            if ( is_wp_error( $aliases ) ) {
+                add_settings_error( 'bible_messages', 'bible_error', $aliases->get_error_message(), 'error' );
+                return;
+            }
+            if ( array_key_exists( 'aliases', $data ) ) update_option( 'bible_custom_aliases', $aliases );
+            if ( isset( $data['settings'] ) ) update_option( 'bible_settings', self::normalize_settings( $data['settings'] ) );
+            add_settings_error( 'bible_messages', 'bible_updated', 'Bible settings imported.', 'updated' );
         }
-
-        // Save aliases – collect, sort by book_number, then save
-        if ( isset( $_POST['bible_save_aliases'] ) && check_admin_referer( 'bible_aliases_nonce' ) ) {
+        if ( isset( $_POST['bible_save_aliases'] ) ) {
+            check_admin_referer( 'bible_aliases_nonce' );
             $aliases = array();
-            if ( isset( $_POST['alias_text'] ) && is_array( $_POST['alias_text'] ) ) {
-                foreach ( $_POST['alias_text'] as $i => $alias ) {
-                    $alias = trim( sanitize_text_field( $alias ) );
-                    $bn    = intval( $_POST['alias_book'][ $i ] ?? 0 );
-                    if ( $alias !== '' && $bn > 0 ) {
-                        $aliases[] = array( 'alias' => $alias, 'book_number' => $bn );
-                    }
-                }
+            $texts = wp_unslash( $_POST['alias_text'] ?? array() );
+            $numbers = $_POST['alias_book'] ?? array();
+            if ( ! is_array( $texts ) || ! is_array( $numbers ) || count( $texts ) > 2000 ) {
+                add_settings_error( 'bible_messages', 'bible_error', 'Invalid aliases.', 'error' );
+                return;
             }
-            // Sort by book_number, then alphabetically within each book
-            usort( $aliases, function( $a, $b ) {
-                if ( $a['book_number'] !== $b['book_number'] ) {
-                    return $a['book_number'] - $b['book_number'];
-                }
-                return strcmp( $a['alias'], $b['alias'] );
-            });
+            foreach ( $texts as $i => $text ) {
+                $aliases[] = array( 'alias' => $text, 'book_number' => $numbers[$i] ?? 0 );
+            }
+            $aliases = self::normalize_aliases( $aliases );
+            if ( is_wp_error( $aliases ) ) {
+                add_settings_error( 'bible_messages', 'bible_error', $aliases->get_error_message(), 'error' );
+                return;
+            }
             update_option( 'bible_custom_aliases', $aliases );
-            add_settings_error( 'bible_messages', 'bible_updated', 'Šablonai išsaugoti ir surūšiuoti pagal knygas.', 'updated' );
+            add_settings_error( 'bible_messages', 'bible_updated', 'Aliases saved.', 'updated' );
         }
     }
 
@@ -382,7 +366,7 @@ class Bible_Admin {
                 ?>
                 <div class="bible-book-group" data-book="<?php echo $bn; ?>">
                     <div class="bible-book-header">
-                        <span class="bible-book-badge" style="background-color: <?php echo esc_attr( $b['book_color'] ); ?>">
+                        <span class="bible-book-badge" style="background-color: <?php echo esc_attr( sanitize_hex_color( $b['book_color'] ) ?: '' ); ?>">
                             <?php echo esc_html( $b['short_name'] ); ?>
                         </span>
                         <strong><?php echo esc_html( $b['long_name'] ); ?></strong>

@@ -16,7 +16,7 @@ class Bible_DB {
             long_name VARCHAR(100) NOT NULL,
             book_color VARCHAR(20) DEFAULT '',
             PRIMARY KEY (book_number)
-        ) $charset;";
+        ) ENGINE=InnoDB $charset;";
 
         $sql_verses = "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}bible_verses (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -27,7 +27,7 @@ class Bible_DB {
             PRIMARY KEY (id),
             UNIQUE KEY book_chapter_verse (book_number, chapter, verse),
             KEY idx_book_chapter (book_number, chapter)
-        ) $charset;";
+        ) ENGINE=InnoDB $charset;";
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta( $sql_books );
@@ -45,93 +45,142 @@ class Bible_DB {
      */
     public static function import_sqlite_module( $sqlite_path, $module_name = '' ) {
         global $wpdb;
-
         if ( ! class_exists( 'SQLite3' ) ) {
             return new WP_Error( 'no_sqlite', 'PHP SQLite3 extension is not available.' );
         }
-        if ( ! file_exists( $sqlite_path ) ) {
-            return new WP_Error( 'file_missing', 'SQLite3 file not found.' );
+        if ( ! is_file( $sqlite_path ) || filesize( $sqlite_path ) > 104857600 ||
+            file_get_contents( $sqlite_path, false, null, 0, 16 ) !== "SQLite format 3\0" ) {
+            return new WP_Error( 'invalid_module', 'Expected a SQLite3 database no larger than 100 MiB.' );
         }
-
+        $db = null;
+        $transaction = false;
         try {
             $db = new SQLite3( $sqlite_path, SQLITE3_OPEN_READONLY );
-        } catch ( Exception $e ) {
-            return new WP_Error( 'sqlite_error', 'Could not open SQLite3 file: ' . $e->getMessage() );
-        }
-
-        $wpdb->query( "TRUNCATE TABLE {$wpdb->prefix}bible_books" );
-        $wpdb->query( "TRUNCATE TABLE {$wpdb->prefix}bible_verses" );
-
-        // Import books
-        $result = $db->query( "SELECT book_number, short_name, long_name, book_color FROM books ORDER BY book_number" );
-        if ( $result ) {
+            $db->enableExceptions( true );
+            $db->exec( 'PRAGMA query_only = ON' );
+            $db->exec( 'PRAGMA trusted_schema = OFF' );
+            foreach ( array( 'books', 'verses' ) as $table ) {
+                $schema = $db->querySingle( "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = '$table'" );
+                if ( ! is_string( $schema ) || ! preg_match( '/^CREATE\\s+TABLE\\s/i', $schema ) ) {
+                    throw new RuntimeException( 'Missing module tables.' );
+                }
+                $columns = $db->query( "PRAGMA table_xinfo('$table')" );
+                while ( $column = $columns->fetchArray( SQLITE3_ASSOC ) ) {
+                    if ( ! empty( $column['hidden'] ) ) {
+                        throw new RuntimeException( 'Generated or hidden module columns are not supported.' );
+                    }
+                }
+            }
+            // Validate the entire bounded input before touching the installed Bible.
+            $books = array();
+            $result = $db->query( 'SELECT book_number, short_name, long_name, book_color FROM books LIMIT 201' );
             while ( $row = $result->fetchArray( SQLITE3_ASSOC ) ) {
-                $wpdb->replace(
-                    $wpdb->prefix . 'bible_books',
-                    array(
-                        'book_number' => intval( $row['book_number'] ),
-                        'short_name'  => sanitize_text_field( $row['short_name'] ),
-                        'long_name'   => sanitize_text_field( $row['long_name'] ),
-                        'book_color'  => sanitize_text_field( $row['book_color'] ),
-                    ),
-                    array( '%d', '%s', '%s', '%s' )
+                $number = filter_var( $row['book_number'], FILTER_VALIDATE_INT );
+                if ( ! $number || $number < 1 || $number > 10000 || isset( $books[$number] ) ||
+                    ! is_string( $row['short_name'] ) || ! is_string( $row['long_name'] ) ||
+                    strlen( $row['short_name'] ) > 80 || strlen( $row['long_name'] ) > 400 ) {
+                    throw new RuntimeException( 'Invalid book.' );
+                }
+                $books[$number] = array(
+                    'book_number' => $number,
+                    'short_name' => sanitize_text_field( $row['short_name'] ),
+                    'long_name' => sanitize_text_field( $row['long_name'] ),
+                    'book_color' => sanitize_hex_color( is_string( $row['book_color'] ) ? $row['book_color'] : '' ) ?: '',
                 );
             }
-        }
-
-        // Import verses in batches
-        $result = $db->query( "SELECT book_number, chapter, verse, text FROM verses ORDER BY book_number, chapter, verse" );
-        $count = 0;
-        if ( $result ) {
+            if ( ! $books || count( $books ) > 200 ) {
+                throw new RuntimeException( 'Invalid book count.' );
+            }
+            $count = 0;
+            $seen = array();
+            $result = $db->query( 'SELECT book_number, chapter, verse, text FROM verses LIMIT 100001' );
+            while ( $row = $result->fetchArray( SQLITE3_ASSOC ) ) {
+                foreach ( array( 'book_number', 'chapter', 'verse' ) as $key ) {
+                    if ( false === filter_var( $row[$key], FILTER_VALIDATE_INT ) || $row[$key] < 1 || $row[$key] > 10000 ) {
+                        throw new RuntimeException( 'Invalid verse reference.' );
+                    }
+                }
+                $key = $row['book_number'] . ':' . $row['chapter'] . ':' . $row['verse'];
+                if ( ! isset( $books[$row['book_number']] ) || isset( $seen[$key] ) ||
+                    ! is_string( $row['text'] ) || strlen( $row['text'] ) > 16384 || ++$count > 100000 ) {
+                    throw new RuntimeException( 'Invalid verse data.' );
+                }
+                $seen[$key] = true;
+            }
+            unset( $seen );
+            if ( ! $count ) {
+                throw new RuntimeException( 'Empty module.' );
+            }
+            // Rollback must be supported; never TRUNCATE the live tables.
+            foreach ( array( 'bible_books', 'bible_verses' ) as $table ) {
+                $engine = $wpdb->get_var( $wpdb->prepare(
+                    'SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+                    $wpdb->prefix . $table
+                ) );
+                if ( strtoupper( (string) $engine ) !== 'INNODB' ) {
+                    return new WP_Error( 'module_engine', 'Import requires InnoDB Bible tables. Existing data has been kept.' );
+                }
+            }
+            if ( false === $wpdb->query( 'START TRANSACTION' ) ) {
+                throw new RuntimeException( 'Transaction failed.' );
+            }
+            $transaction = true;
+            foreach ( array( 'bible_books', 'bible_verses' ) as $table ) {
+                if ( false === $wpdb->query( "DELETE FROM {$wpdb->prefix}$table" ) ) {
+                    throw new RuntimeException( 'Database write failed.' );
+                }
+            }
+            foreach ( $books as $book ) {
+                if ( false === $wpdb->insert( $wpdb->prefix . 'bible_books', $book, array( '%d', '%s', '%s', '%s' ) ) ) {
+                    throw new RuntimeException( 'Book write failed.' );
+                }
+            }
+            $result = $db->query( 'SELECT book_number, chapter, verse, text FROM verses LIMIT 100001' );
             $batch = array();
             while ( $row = $result->fetchArray( SQLITE3_ASSOC ) ) {
-                $batch[] = $wpdb->prepare(
-                    "(%d, %d, %d, %s)",
-                    intval( $row['book_number'] ),
-                    intval( $row['chapter'] ),
-                    intval( $row['verse'] ),
-                    $row['text']
-                );
-                $count++;
-                if ( $count % 500 === 0 ) {
-                    $wpdb->query(
-                        "INSERT INTO {$wpdb->prefix}bible_verses (book_number, chapter, verse, text) VALUES " .
-                        implode( ',', $batch ) .
-                        " ON DUPLICATE KEY UPDATE text = VALUES(text)"
-                    );
+                $batch[] = $wpdb->prepare( '(%d,%d,%d,%s)', $row['book_number'], $row['chapter'], $row['verse'], $row['text'] );
+                if ( count( $batch ) === 250 ) {
+                    self::insert_verse_batch( $batch );
                     $batch = array();
                 }
             }
-            if ( ! empty( $batch ) ) {
-                $wpdb->query(
-                    "INSERT INTO {$wpdb->prefix}bible_verses (book_number, chapter, verse, text) VALUES " .
-                    implode( ',', $batch ) .
-                    " ON DUPLICATE KEY UPDATE text = VALUES(text)"
-                );
+            if ( $batch ) self::insert_verse_batch( $batch );
+            if ( false === $wpdb->query( 'COMMIT' ) ) {
+                throw new RuntimeException( 'Commit failed.' );
             }
-        }
-
-        $db->close();
-
-        // Store module info
-        try {
-            $db = new SQLite3( $sqlite_path, SQLITE3_OPEN_READONLY );
-            $info_result = $db->query( "SELECT name, value FROM info" );
+            $transaction = false;
+            // Optional metadata is not trusted HTML.
             $info = array();
-            if ( $info_result ) {
-                while ( $row = $info_result->fetchArray( SQLITE3_ASSOC ) ) {
-                    $info[ $row['name'] ] = $row['value'];
+            try {
+                $info_schema = $db->querySingle( "SELECT sql FROM sqlite_master WHERE type='table' AND name='info'" );
+                if ( is_string( $info_schema ) && preg_match( '/^CREATE\\s+TABLE\\s/i', $info_schema ) &&
+                    stripos( $info_schema, 'GENERATED' ) === false && stripos( $info_schema, ' AS' ) === false ) {
+                    $result = $db->query( 'SELECT name, value FROM info LIMIT 100' );
+                    while ( $row = $result->fetchArray( SQLITE3_ASSOC ) ) {
+                        if ( is_string( $row['name'] ) && is_string( $row['value'] ) ) {
+                            $info[ sanitize_key( substr( $row['name'], 0, 100 ) ) ] = sanitize_text_field( substr( $row['value'], 0, 4096 ) );
+                        }
+                    }
                 }
-            }
-            $db->close();
+            } catch ( Exception $e ) { /* Optional metadata may be absent. */ }
             update_option( 'bible_module_info', $info );
-        } catch ( Exception $e ) { /* non-critical */ }
-
-        if ( $module_name ) {
-            update_option( 'bible_module_name', $module_name );
+            update_option( 'bible_module_name', sanitize_text_field( $module_name ) );
+            return $count;
+        } catch ( Exception $e ) {
+            if ( $transaction ) $wpdb->query( 'ROLLBACK' );
+            return new WP_Error( 'module_import_failed', 'Invalid module or database write failure. Existing Bible data has been kept.' );
+        } finally {
+            if ( $db ) $db->close();
         }
+    }
 
-        return $count;
+    private static function insert_verse_batch( $batch ) {
+        global $wpdb;
+        if ( false === $wpdb->query(
+            "INSERT INTO {$wpdb->prefix}bible_verses (book_number, chapter, verse, text) VALUES " . implode( ',', $batch )
+        ) ) {
+            throw new RuntimeException( 'Verse write failed.' );
+        }
     }
 
     public static function get_books() {
@@ -160,7 +209,7 @@ class Bible_DB {
             return $wpdb->get_results( $wpdb->prepare(
                 "SELECT chapter, verse, text FROM {$wpdb->prefix}bible_verses
                  WHERE book_number = %d AND chapter = %d AND verse >= %d AND verse <= %d
-                 ORDER BY verse",
+                 ORDER BY verse LIMIT 81",
                 $book_number, $chapter, $verse_start, $verse_end
             ), ARRAY_A );
         } elseif ( $verse_start !== null ) {
@@ -173,7 +222,7 @@ class Bible_DB {
             return $wpdb->get_results( $wpdb->prepare(
                 "SELECT chapter, verse, text FROM {$wpdb->prefix}bible_verses
                  WHERE book_number = %d AND chapter = %d
-                 ORDER BY verse",
+                 ORDER BY verse LIMIT 81",
                 $book_number, $chapter
             ), ARRAY_A );
         }
@@ -187,7 +236,7 @@ class Bible_DB {
         return $wpdb->get_results( $wpdb->prepare(
             "SELECT chapter, verse, text FROM {$wpdb->prefix}bible_verses
              WHERE book_number = %d AND chapter >= %d AND chapter <= %d
-             ORDER BY chapter, verse",
+             ORDER BY chapter, verse LIMIT 81",
             $book_number, $chapter_start, $chapter_end
         ), ARRAY_A );
     }
@@ -199,42 +248,13 @@ class Bible_DB {
     public static function get_cross_chapter_verses( $book_number, $ch_from, $v_from, $ch_to, $v_to ) {
         global $wpdb;
 
-        if ( $ch_from === $ch_to ) {
-            return self::get_verses( $book_number, $ch_from, $v_from, $v_to );
-        }
-
-        $results = array();
-
-        // First chapter: from v_from to end
-        $first = $wpdb->get_results( $wpdb->prepare(
+        return $wpdb->get_results( $wpdb->prepare(
             "SELECT chapter, verse, text FROM {$wpdb->prefix}bible_verses
-             WHERE book_number = %d AND chapter = %d AND verse >= %d
-             ORDER BY verse",
-            $book_number, $ch_from, $v_from
+             WHERE book_number = %d AND chapter >= %d AND chapter <= %d
+             AND (chapter > %d OR verse >= %d) AND (chapter < %d OR verse <= %d)
+             ORDER BY chapter, verse LIMIT 81",
+            $book_number, $ch_from, $ch_to, $ch_from, $v_from, $ch_to, $v_to
         ), ARRAY_A );
-        if ( $first ) $results = array_merge( $results, $first );
-
-        // Middle chapters (if any): all verses
-        if ( $ch_to - $ch_from > 1 ) {
-            $middle = $wpdb->get_results( $wpdb->prepare(
-                "SELECT chapter, verse, text FROM {$wpdb->prefix}bible_verses
-                 WHERE book_number = %d AND chapter > %d AND chapter < %d
-                 ORDER BY chapter, verse",
-                $book_number, $ch_from, $ch_to
-            ), ARRAY_A );
-            if ( $middle ) $results = array_merge( $results, $middle );
-        }
-
-        // Last chapter: v1 to v_to
-        $last = $wpdb->get_results( $wpdb->prepare(
-            "SELECT chapter, verse, text FROM {$wpdb->prefix}bible_verses
-             WHERE book_number = %d AND chapter = %d AND verse <= %d
-             ORDER BY verse",
-            $book_number, $ch_to, $v_to
-        ), ARRAY_A );
-        if ( $last ) $results = array_merge( $results, $last );
-
-        return $results;
     }
 
     /**

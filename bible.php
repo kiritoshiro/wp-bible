@@ -3,7 +3,7 @@
  * Plugin Name: Bible
  * Plugin URI:  https://github.com/kiritoshiro/wp-bible
  * Description: Automatically detects Bible verse references on your site and shows a popup with the verse text. Supports Lithuanian-style references. Upload your own Bible module (SQLite3).
- * Version:     1.1.2
+ * Version:     1.1.3
  * Author:      Bible Plugin
  * Text Domain: bible
  * Update URI:  https://github.com/kiritoshiro/wp-bible
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'BIBLE_PLUGIN_VERSION', '1.1.2' );
+define( 'BIBLE_PLUGIN_VERSION', '1.1.3' );
 define( 'BIBLE_PLUGIN_FILE', __FILE__ );
 define( 'BIBLE_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'BIBLE_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -40,8 +40,8 @@ function bible_plugin_activate() {
         Bible_DB::import_sqlite_module( $default_module, 'LTRK' );
     }
 
-    // Set default aliases (always reset on activation to get latest)
-    update_option( 'bible_custom_aliases', Bible_DB::get_default_aliases() );
+    // Preserve customized aliases when reactivating or updating.
+    add_option( 'bible_custom_aliases', Bible_DB::get_default_aliases() );
 
     // Set default settings
     if ( false === get_option( 'bible_settings' ) ) {

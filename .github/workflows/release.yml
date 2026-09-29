@@ -6,14 +6,21 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  checks:
+    uses: ./.github/workflows/security.yml
   release:
+    needs: checks
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - name: Check out tagged source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Build WordPress plugin ZIP
         shell: bash
@@ -25,6 +32,10 @@ jobs:
             exit 1
           fi
 
+          find . -name '*.php' -not -path './dist/*' -print0 | xargs -0 -n1 php -l
+          node --check assets/js/bible-frontend.js
+          grep -F "define( 'BIBLE_PLUGIN_VERSION', '$TAG_VERSION' );" bible.php
+          grep -Fx "Stable tag: $TAG_VERSION" readme.txt
           mkdir -p dist/bible
           cp bible.php readme.txt index.php dist/bible/
           cp -R assets includes modules dist/bible/
