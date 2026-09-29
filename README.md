@@ -10,7 +10,13 @@ This repository is private, so the WordPress site needs a fine-grained GitHub pe
 
 <pre><code>define( 'BIBLE_GITHUB_TOKEN', 'github_pat_your_read_only_token' );</code></pre>
 
-The updater only sends the token to api.github.com. GitHub's temporary release-asset redirect is downloaded without the token. If the repository is made public, the token is no longer needed.
+The updater only sends the token to api.github.com. GitHub's temporary release-asset redirect is downloaded without the token. This updater currently requires a token even if the repository is made public.
+
+If you still have version 1.1.1, manually install the latest release asset **bible.zip** once through Plugins → Add New → Upload Plugin and replace the existing plugin. Version 1.1.1 has no updater. After that, configured sites can use native WordPress updates. Allow up to 10 minutes for cached release information to refresh.
+
+## Import limits
+
+Module uploads must be SQLite3 databases (maximum 100 MiB), containing ordinary books and verses tables. Imports support at most 200 books, 100,000 verses and 16 KiB per verse. Both WordPress Bible tables must use InnoDB so failed imports can roll back. Uploaded modules are read from PHP temporary storage and are not published in the plugin directory. JSON settings imports are limited to 1 MiB and 2,000 aliases.
 
 ## Publishing a release
 

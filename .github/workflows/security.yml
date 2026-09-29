@@ -1,0 +1,43 @@
+name: Security regression checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: audit-only
+          MYSQL_DATABASE: bible_audit
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -paudit-only"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y php-cli php-mysql php-sqlite3 php-mbstring php-xml
+          curl --fail --silent --show-error --location https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar -o "$RUNNER_TEMP/wp-cli.phar"
+      - name: Syntax checks
+        run: |
+          find . -name '*.php' -print0 | xargs -0 -n1 php -l
+          node --check assets/js/bible-frontend.js
+      - name: Exercise WordPress and MySQL
+        run: |
+          WP_PATH="$RUNNER_TEMP/wordpress"
+          php "$RUNNER_TEMP/wp-cli.phar" core download --version=7.1.2 --path="$WP_PATH"
+          php "$RUNNER_TEMP/wp-cli.phar" config create --path="$WP_PATH" --dbname=bible_audit --dbuser=root --dbpass=audit-only --dbhost=127.0.0.1:3306 --skip-salts
+          php "$RUNNER_TEMP/wp-cli.phar" core install --path="$WP_PATH" --url=http://bible-audit.invalid --title=BibleAudit --admin_user=audit --admin_password=local-test-only --admin_email=audit@example.invalid --skip-email
+          php "$RUNNER_TEMP/wp-cli.phar" eval-file tests/security.php --path="$WP_PATH"

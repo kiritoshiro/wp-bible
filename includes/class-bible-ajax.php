@@ -21,6 +21,16 @@ class Bible_Ajax {
      *   mode         (optional) – "cross_chapter" for cross-chapter verse ranges
      */
     public function get_verse() {
+        foreach ( array( 'book_number', 'chapter', 'verse_start', 'verse_end', 'chapter_end', 'verse_end_ch' ) as $key ) {
+            if ( isset( $_GET[$key] ) && $_GET[$key] !== '' &&
+                ( ! is_scalar( $_GET[$key] ) || ! preg_match( '/^[0-9]{1,5}$/D', (string) $_GET[$key] ) ||
+                  intval( $_GET[$key] ) < 1 || intval( $_GET[$key] ) > 10000 ) ) {
+                wp_send_json_error( array( 'message' => 'Invalid reference' ), 400 );
+            }
+        }
+        if ( isset( $_GET['mode'] ) && ! in_array( $_GET['mode'], array( '', 'cross_chapter' ), true ) ) {
+            wp_send_json_error( array( 'message' => 'Invalid reference mode' ), 400 );
+        }
         $book_number  = isset( $_GET['book_number'] ) ? intval( $_GET['book_number'] ) : 0;
         $chapter      = isset( $_GET['chapter'] ) ? intval( $_GET['chapter'] ) : 0;
         $verse_start  = isset( $_GET['verse_start'] ) && $_GET['verse_start'] !== '' ? intval( $_GET['verse_start'] ) : null;
@@ -163,7 +173,10 @@ class Bible_Ajax {
         $text = preg_replace( '/<br\s*\/?>/', ' ', $text );
         $text = preg_replace( '/<S>.*?<\/S>/', '', $text );
         $text = preg_replace( '/<RF>.*?<Rf>/', '', $text );
-        $text = strip_tags( $text, '<i><em><b><strong><span>' );
+        $text = wp_kses( $text, array(
+            'i' => array(), 'em' => array(), 'b' => array(),
+            'strong' => array(), 'span' => array(),
+        ) );
         return trim( $text );
     }
 }

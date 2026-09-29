@@ -416,10 +416,8 @@
           cache[cacheKey] = data.data;
           renderPopup(refEl, data.data);
         } else {
-          popup.querySelector(".bible-popup-body").innerHTML =
-            '<p class="bible-popup-error">' +
-            (data.data && data.data.message ? data.data.message : "Eilutė nerasta") +
-            "</p>";
+          popup.querySelector(".bible-popup-body").textContent =
+            (data.data && data.data.message ? data.data.message : "Eilutė nerasta");
         }
       })
       .catch(function () {

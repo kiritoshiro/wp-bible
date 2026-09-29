@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Bible_GitHub_Updater {
     const REPOSITORY = 'kiritoshiro/wp-bible';
     const API_VERSION = '2026-03-10';
-    const RELEASE_CACHE_KEY = 'bible_github_latest_release_v1';
+    const RELEASE_CACHE_KEY = 'bible_github_latest_release_v2';
     const MAX_PACKAGE_SIZE = 52428800;
 
     public function __construct() {
@@ -44,7 +44,8 @@ class Bible_GitHub_Updater {
             'https://api.github.com/repos/' . self::REPOSITORY . '/releases/latest',
             array(
                 'timeout'             => 15,
-                'redirection'         => 2,
+                'redirection'         => 0,
+                'limit_response_size' => 1048576,
                 'reject_unsafe_urls'  => true,
                 'headers'             => array(
                     'Accept'                => 'application/vnd.github+json',
@@ -92,6 +93,7 @@ class Bible_GitHub_Updater {
                     && 'https' === ( $browser_parts['scheme'] ?? '' )
                     && 'github.com' === ( $browser_parts['host'] ?? '' )
                     && '/kiritoshiro/wp-bible/releases/download/' . rawurlencode( $release['tag_name'] ) . '/bible.zip' === ( $browser_parts['path'] ?? '' )
+                    && $browser_url === 'https://github.com/' . self::REPOSITORY . '/releases/download/' . rawurlencode( $release['tag_name'] ) . '/bible.zip'
                     && $size > 0
                     && $size <= self::MAX_PACKAGE_SIZE
                 ) {
@@ -101,7 +103,7 @@ class Bible_GitHub_Updater {
             }
         }
 
-        if ( ! $asset || empty( $release['html_url'] ) ) {
+        if ( ! $asset || ( $release['html_url'] ?? '' ) !== 'https://github.com/' . self::REPOSITORY . '/releases/tag/' . rawurlencode( $release['tag_name'] ) ) {
             set_site_transient( self::RELEASE_CACHE_KEY, array( 'error' => true ), 5 * MINUTE_IN_SECONDS );
             return null;
         }
@@ -210,77 +212,57 @@ class Bible_GitHub_Updater {
             );
         }
 
-        $asset_id = absint( $release['asset']['id'] );
-        $asset_url = 'https://api.github.com/repos/' . self::REPOSITORY . '/releases/assets/' . $asset_id;
-        $response = wp_remote_get(
-            $asset_url,
-            array(
-                'timeout'             => 60,
-                'redirection'         => 0,
-                'reject_unsafe_urls'  => true,
-                'headers'             => array(
-                    'Accept'                => 'application/octet-stream',
-                    'Authorization'         => 'Bearer ' . $token,
-                    'X-GitHub-Api-Version'  => self::API_VERSION,
-                ),
-            )
-        );
-
-        if ( is_wp_error( $response ) ) {
-            return new WP_Error( 'bible_github_download_failed', __( 'WordPress could not connect to GitHub to download the Bible plugin update.', 'bible' ) );
-        }
-
-        $status = wp_remote_retrieve_response_code( $response );
-        if ( 302 === $status ) {
-            $download_url = wp_remote_retrieve_header( $response, 'location' );
-            $parts = wp_parse_url( $download_url );
-            $host = is_array( $parts ) && isset( $parts['host'] ) ? strtolower( $parts['host'] ) : '';
-            $trusted_cdn = 'release-assets.githubusercontent.com' === $host
-                || 'objects.githubusercontent.com' === $host
-                || ( strlen( $host ) > strlen( '.githubusercontent.com' ) && '.githubusercontent.com' === substr( $host, -strlen( '.githubusercontent.com' ) ) );
-
-            if ( ! $trusted_cdn || ! wp_http_validate_url( $download_url ) ) {
-                return new WP_Error( 'bible_github_redirect_invalid', __( 'GitHub returned an invalid download link for the Bible plugin update.', 'bible' ) );
-            }
-
-            // The short-lived CDN URL is fetched without the repository token.
-            $response = wp_remote_get(
-                $download_url,
-                array(
-                    'timeout'             => 60,
-                    'redirection'         => 3,
-                    'reject_unsafe_urls'  => true,
-                )
-            );
-
-            if ( is_wp_error( $response ) ) {
-                return new WP_Error( 'bible_github_download_failed', __( 'WordPress could not download the Bible plugin release asset from GitHub.', 'bible' ) );
-            }
-
-            $status = wp_remote_retrieve_response_code( $response );
-        }
-
-        if ( 200 !== $status ) {
-            return new WP_Error( 'bible_github_download_failed', __( 'GitHub did not return the Bible plugin update package.', 'bible' ) );
-        }
-
-        $body = wp_remote_retrieve_body( $response );
-        if ( ! is_string( $body ) || 2 > strlen( $body ) || 'PK' !== substr( $body, 0, 2 ) || strlen( $body ) > self::MAX_PACKAGE_SIZE ) {
-            return new WP_Error( 'bible_github_package_invalid', __( 'The downloaded Bible plugin package is not a valid ZIP file.', 'bible' ) );
-        }
-
         $temporary_file = wp_tempnam( 'bible-update.zip' );
         if ( ! $temporary_file ) {
-            return new WP_Error( 'bible_github_tempfile_failed', __( 'WordPress could not create a temporary file for the Bible plugin update.', 'bible' ) );
+            return new WP_Error( 'bible_github_tempfile_failed', 'Could not create an update temporary file.' );
         }
-
-        $written = file_put_contents( $temporary_file, $body, LOCK_EX );
-        if ( false === $written || strlen( $body ) !== $written ) {
-            wp_delete_file( $temporary_file );
-            return new WP_Error( 'bible_github_package_write_failed', __( 'WordPress could not save the Bible plugin update package.', 'bible' ) );
+        $keep_file = false;
+        try {
+            $asset = $release['asset'];
+            $options = array(
+                'timeout' => 60, 'redirection' => 0, 'reject_unsafe_urls' => true,
+                'stream' => true, 'filename' => $temporary_file,
+                'limit_response_size' => min( self::MAX_PACKAGE_SIZE, intval( $asset['size'] ) ) + 1,
+                'headers' => array(
+                    'Accept' => 'application/octet-stream',
+                    'Authorization' => 'Bearer ' . $token,
+                    'X-GitHub-Api-Version' => self::API_VERSION,
+                ),
+            );
+            $response = wp_remote_get(
+                'https://api.github.com/repos/' . self::REPOSITORY . '/releases/assets/' . absint( $asset['id'] ),
+                $options
+            );
+            if ( ! is_wp_error( $response ) && 302 === wp_remote_retrieve_response_code( $response ) ) {
+                $url = wp_remote_retrieve_header( $response, 'location' );
+                $parts = wp_parse_url( $url );
+                if ( ! is_array( $parts ) || ( $parts['scheme'] ?? '' ) !== 'https' ||
+                    ! in_array( strtolower( $parts['host'] ?? '' ), array( 'release-assets.githubusercontent.com', 'objects.githubusercontent.com' ), true ) ||
+                    isset( $parts['user'] ) || isset( $parts['pass'] ) || isset( $parts['port'] ) ||
+                    ! wp_http_validate_url( $url ) ) {
+                    return new WP_Error( 'bible_github_redirect_invalid', 'GitHub returned an unexpected download host.' );
+                }
+                // No token and no further redirects on the signed CDN request.
+                unset( $options['headers'] );
+                $response = wp_remote_get( $url, $options );
+            }
+            if ( is_wp_error( $response ) || 200 !== wp_remote_retrieve_response_code( $response ) ) {
+                return new WP_Error( 'bible_github_download_failed', 'Could not download the GitHub release asset.' );
+            }
+            clearstatcache( true, $temporary_file );
+            $digest = $asset['digest'] ?? '';
+            if ( filesize( $temporary_file ) !== intval( $asset['size'] ) ||
+                file_get_contents( $temporary_file, false, null, 0, 4 ) !== "PK\x03\x04" ||
+                ( $digest !== '' && ( ! is_string( $digest ) || ! preg_match( '/^sha256:[a-f0-9]{64}$/D', $digest ) ||
+                    ! hash_equals( substr( $digest, 7 ), hash_file( 'sha256', $temporary_file ) ) ) ) ) {
+                return new WP_Error( 'bible_github_package_invalid', 'The release package size, ZIP header, or SHA-256 checksum is invalid.' );
+            }
+            // WordPress core validates and unpacks the archive after this hook.
+            $keep_file = true;
+            return $temporary_file;
+        } finally {
+            if ( ! $keep_file ) wp_delete_file( $temporary_file );
         }
-
-        return $temporary_file;
     }
 
     public function show_configuration_notice() {
