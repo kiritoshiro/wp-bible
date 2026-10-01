@@ -9,10 +9,14 @@ permissions:
   contents: read
 
 jobs:
+  cybersecurity:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/cybersecurity.yml
   checks:
     uses: ./.github/workflows/security.yml
   release:
-    needs: checks
+    needs: [checks, cybersecurity]
     permissions:
       contents: write
     runs-on: ubuntu-latest
