@@ -9,14 +9,15 @@ permissions:
   contents: read
 
 jobs:
-  cybersecurity:
+  # The whole security gate (baseline, regression tests, CodeQL) must pass on
+  # the tagged commit before the plugin is packaged and published.
+  security-gate:
     permissions:
       contents: read
-    uses: ./.github/workflows/cybersecurity.yml
-  checks:
-    uses: ./.github/workflows/security.yml
+      security-events: write
+    uses: ./.github/workflows/security-gate.yml
   release:
-    needs: [checks, cybersecurity]
+    needs: security-gate
     permissions:
       contents: write
     runs-on: ubuntu-latest

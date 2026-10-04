@@ -1,8 +1,7 @@
 name: Security regression checks
+# Reusable: runs only through security-gate.yml, which owns the triggers,
+# schedule and concurrency.
 on:
-  pull_request:
-  push:
-    branches: [main]
   workflow_call:
 
 permissions:
