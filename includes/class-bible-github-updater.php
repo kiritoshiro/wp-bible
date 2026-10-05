@@ -17,7 +17,6 @@ class Bible_GitHub_Updater {
         add_filter( 'pre_set_site_transient_update_plugins', array( $this, 'filter_plugin_updates' ) );
         add_filter( 'plugins_api', array( $this, 'filter_plugin_information' ), 20, 3 );
         add_filter( 'upgrader_pre_download', array( $this, 'download_private_release' ), 10, 4 );
-        add_action( 'admin_notices', array( $this, 'show_configuration_notice' ) );
     }
 
     private function token() {
@@ -28,16 +27,28 @@ class Bible_GitHub_Updater {
         return trim( BIBLE_GITHUB_TOKEN );
     }
 
+    /**
+     * GitHub API headers. The repository is public, so the token is optional:
+     * it only raises the API rate limit (or restores access if the repository
+     * becomes private) and is only ever sent to api.github.com.
+     */
+    private function api_headers( $accept ) {
+        $headers = array(
+            'Accept'               => $accept,
+            'X-GitHub-Api-Version' => self::API_VERSION,
+        );
+        $token = $this->token();
+        if ( '' !== $token ) {
+            $headers['Authorization'] = 'Bearer ' . $token;
+        }
+
+        return $headers;
+    }
+
     private function latest_release() {
         $cached = get_site_transient( self::RELEASE_CACHE_KEY );
         if ( is_array( $cached ) ) {
             return empty( $cached['error'] ) ? $cached : null;
-        }
-
-        $token = $this->token();
-        if ( '' === $token ) {
-            set_site_transient( self::RELEASE_CACHE_KEY, array( 'error' => true ), 5 * MINUTE_IN_SECONDS );
-            return null;
         }
 
         $response = wp_remote_get(
@@ -47,11 +58,7 @@ class Bible_GitHub_Updater {
                 'redirection'         => 0,
                 'limit_response_size' => 1048576,
                 'reject_unsafe_urls'  => true,
-                'headers'             => array(
-                    'Accept'                => 'application/vnd.github+json',
-                    'Authorization'         => 'Bearer ' . $token,
-                    'X-GitHub-Api-Version'  => self::API_VERSION,
-                ),
+                'headers'             => $this->api_headers( 'application/vnd.github+json' ),
             )
         );
 
@@ -196,14 +203,6 @@ class Bible_GitHub_Updater {
             return $reply;
         }
 
-        $token = $this->token();
-        if ( '' === $token ) {
-            return new WP_Error(
-                'bible_github_token_missing',
-                __( 'GitHub updates for the Bible plugin are not configured. Add BIBLE_GITHUB_TOKEN to wp-config.php and try again.', 'bible' )
-            );
-        }
-
         $release = $this->latest_release();
         if ( ! $release || $package !== $release['asset']['browser_download_url'] ) {
             return new WP_Error(
@@ -223,11 +222,7 @@ class Bible_GitHub_Updater {
                 'timeout' => 60, 'redirection' => 0, 'reject_unsafe_urls' => true,
                 'stream' => true, 'filename' => $temporary_file,
                 'limit_response_size' => min( self::MAX_PACKAGE_SIZE, intval( $asset['size'] ) ) + 1,
-                'headers' => array(
-                    'Accept' => 'application/octet-stream',
-                    'Authorization' => 'Bearer ' . $token,
-                    'X-GitHub-Api-Version' => self::API_VERSION,
-                ),
+                'headers' => $this->api_headers( 'application/octet-stream' ),
             );
             $response = wp_remote_get(
                 'https://api.github.com/repos/' . self::REPOSITORY . '/releases/assets/' . absint( $asset['id'] ),
@@ -263,21 +258,5 @@ class Bible_GitHub_Updater {
         } finally {
             if ( ! $keep_file ) wp_delete_file( $temporary_file );
         }
-    }
-
-    public function show_configuration_notice() {
-        if ( ! current_user_can( 'manage_options' ) || '' !== $this->token() ) {
-            return;
-        }
-
-        $screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
-        if ( ! is_object( $screen ) || ! in_array( $screen->id, array( 'plugins', 'update-core' ), true ) ) {
-            return;
-        }
-
-        echo '<div class="notice notice-warning"><p>';
-        echo esc_html__( 'GitHub updates for the Bible plugin need a read-only token because its repository is private. Add this line to wp-config.php:', 'bible' );
-        echo ' <code>define( \'BIBLE_GITHUB_TOKEN\', \'your_read_only_token\' );</code>';
-        echo '</p></div>';
     }
 }
