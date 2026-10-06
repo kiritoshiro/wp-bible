@@ -3,7 +3,7 @@
  * Plugin Name: Bible
  * Plugin URI:  https://github.com/kiritoshiro/wp-bible
  * Description: Automatically detects Bible verse references on your site and shows a popup with the verse text. Supports Lithuanian-style references. Upload your own Bible module (SQLite3).
- * Version:     1.1.3
+ * Version:     1.1.4
  * Author:      Bible Plugin
  * Text Domain: bible
  * Requires at least: 6.2
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'BIBLE_PLUGIN_VERSION', '1.1.3' );
+define( 'BIBLE_PLUGIN_VERSION', '1.1.4' );
 define( 'BIBLE_PLUGIN_FILE', __FILE__ );
 define( 'BIBLE_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'BIBLE_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
