@@ -1,0 +1,15 @@
+{
+  "mounts": [
+    {
+      "host": ".",
+      "vfs": "/wordpress/wp-content/plugins/bible"
+    }
+  ],
+  "plugins": [
+    "bible/bible.php"
+  ],
+  "watch": [
+    "/wordpress/wp-content/plugins/bible/"
+  ],
+  "fixture": "<!-- wp:paragraph --><p>Jn 3, 16 ir Ps 23, 1</p><!-- /wp:paragraph -->"
+}
