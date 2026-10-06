@@ -44,10 +44,14 @@ jobs:
       contents: read
       security-events: write
 
+  wordpress:
+    name: WordPress
+    uses: ./.github/workflows/wordpress-checks.yml
+
   gate:
     name: All security checks passed
     if: ${{ always() }}
-    needs: [baseline, regression, codeql]
+    needs: [baseline, regression, codeql, wordpress]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
