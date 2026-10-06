@@ -28,7 +28,9 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y php-cli php-mysql php-sqlite3 php-mbstring php-xml
-          curl --fail --silent --show-error --location https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar -o "$RUNNER_TEMP/wp-cli.phar"
+          # Pinned WP-CLI release; the checksum matches the release's published .sha256.
+          curl --fail --silent --show-error --location --retry 3 https://github.com/wp-cli/wp-cli/releases/download/v2.12.0/wp-cli-2.12.0.phar -o "$RUNNER_TEMP/wp-cli.phar"
+          printf '%s  %s\n' 'ce34ddd838f7351d6759068d09793f26755463b4a4610a5a5c0a97b68220d85c' "$RUNNER_TEMP/wp-cli.phar" | sha256sum --check --strict
       - name: Syntax checks
         run: |
           find . -name '*.php' -print0 | xargs -0 -n1 php -l
