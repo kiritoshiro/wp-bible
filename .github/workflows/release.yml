@@ -27,6 +27,16 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      # esbuild, pinned in package-lock.json; used only to minify the package.
+      - name: Install the minifier
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
       - name: Build WordPress plugin ZIP
         shell: bash
         run: |
@@ -44,6 +54,8 @@ jobs:
           mkdir -p dist/bible
           cp bible.php readme.txt index.php dist/bible/
           cp -R assets includes modules dist/bible/
+          # Minify the packaged scripts and styles; the repository keeps the sources.
+          node scripts/minify-package-assets.cjs dist/bible
           (cd dist && zip -qr "$RUNNER_TEMP/bible.zip" bible)
 
       - name: Create GitHub Release

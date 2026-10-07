@@ -1,0 +1,8 @@
+{
+  "name": "wp-bible-build",
+  "private": true,
+  "description": "Release-build tooling only (minifies the packaged JavaScript and CSS). Nothing here ships in the plugin.",
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}
