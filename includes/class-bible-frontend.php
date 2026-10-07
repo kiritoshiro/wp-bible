@@ -29,6 +29,10 @@ class Bible_Frontend {
             true
         );
 
+        // WordPress 6.3+ can defer this DOM-ready script; older versions keep
+        // the existing footer loading. BibleData is still printed before it.
+        wp_script_add_data( 'bible-frontend', 'strategy', 'defer' );
+
         // Build book map: alias => book_number
         $books   = Bible_DB::get_books();
         $aliases = get_option( 'bible_custom_aliases', array() );
