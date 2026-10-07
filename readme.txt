@@ -4,7 +4,7 @@ Tags: bible, verses, popup, lithuanian, references
 Requires at least: 6.2
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.1.4
+Stable tag: 1.1.5
 License: GPLv2 or later
 
 Automatically detects Bible verse references on your WordPress site and shows a popup with the verse text.
@@ -26,6 +26,9 @@ Bible plugin scans your site content for Bible references and makes them interac
 * `Teisėjų 3,14` — Full Lithuanian names
 
 == Changelog ==
+
+= 1.1.5 =
+* Performance: the verse popup script loads with `defer` (still in the footer, after its settings), so it no longer holds up the page.
 
 = 1.1.4 =
 * Hardening: the admin screens and the public verse lookup unslash and sanitize the request values they read, and the export links and alias screen output are escaped.
