@@ -3,7 +3,21 @@
 
   if (typeof BibleData === "undefined") return;
 
-  var bookMap = BibleData.bookMap;
+  /*
+   * Book names are compared with every run of whitespace as one plain space.
+   * The database separates the number of a numbered book with a hair space
+   * (U+200A), while articles use a normal or non-breaking space ("1 Sam",
+   * "2&nbsp;Kar"), so "1 Sam", "1 Kar" and "1 Met" were not found.
+   */
+  function normName(s) {
+    return s.replace(/\s+/g, " ");
+  }
+
+  var bookMap = {};
+  Object.keys(BibleData.bookMap).forEach(function (name) {
+    var key = normName(name);
+    if (!bookMap[key]) bookMap[key] = BibleData.bookMap[name];
+  });
   var ajaxurl = BibleData.ajaxurl;
   var trigger = BibleData.popupTrigger || "hover";
   var maxWidth = BibleData.popupMaxWidth || 450;
@@ -23,7 +37,11 @@
     return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
-  var bookNamesPattern = bookNames.map(escRx).join("|");
+  // A space inside a book name matches any whitespace, including non-breaking
+  // and hair spaces (\s covers them in JavaScript).
+  var bookNamesPattern = bookNames.map(function (name) {
+    return escRx(name).replace(/ /g, "\\s+");
+  }).join("|");
 
   // Also build a quick-test regex to check if a string starts with a book name
   // NOTE: \b does NOT work with Lithuanian Unicode chars (ų, ė, š etc.)
@@ -178,7 +196,7 @@
 
     while ((match = refPattern.exec(text)) !== null) {
       var bookName = match[1];
-      var bookNum = bookMap[bookName];
+      var bookNum = bookMap[normName(bookName)];
       if (!bookNum) continue;
 
       var ref = parseRef(match[2], match[3], match[4], match[5], match[6]);
