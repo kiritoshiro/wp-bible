@@ -17,6 +17,20 @@ class Bible_GitHub_Updater {
         add_filter( 'pre_set_site_transient_update_plugins', array( $this, 'filter_plugin_updates' ) );
         add_filter( 'plugins_api', array( $this, 'filter_plugin_information' ), 20, 3 );
         add_filter( 'upgrader_pre_download', array( $this, 'download_private_release' ), 10, 4 );
+        add_action( 'load-update-core.php', array( $this, 'force_check' ), 9 );
+    }
+
+    /**
+     * "Check again" on Dashboard → Updates (force-check=1) only forces the core
+     * check. Drop the release cache and WordPress' plugin update data before
+     * wp_update_plugins runs (priority 10), so a new release shows at once.
+     */
+    public function force_check() {
+        if ( empty( $_GET['force-check'] ) || ! current_user_can( 'update_plugins' ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only cache refresh.
+            return;
+        }
+        delete_site_transient( self::RELEASE_CACHE_KEY );
+        delete_site_transient( 'update_plugins' );
     }
 
     private function token() {
