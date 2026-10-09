@@ -8,9 +8,11 @@
    * The database separates the number of a numbered book with a hair space
    * (U+200A), while articles use a normal or non-breaking space ("1 Sam",
    * "2&nbsp;Kar"), so "1 Sam", "1 Kar" and "1 Met" were not found.
+   * Articles also leave the space out ("1Kor", "2Pt") and break words with
+   * soft hyphens ("Ap&shy;reiškimas").
    */
   function normName(s) {
-    return s.replace(/\s+/g, " ");
+    return s.replace(/\u00AD/g, "").replace(/\s+/g, " ").replace(/^([1-3]) ?(?=\D)/, "$1 ");
   }
 
   var bookMap = {};
@@ -38,15 +40,105 @@
   }
 
   // A space inside a book name matches any whitespace, including non-breaking
-  // and hair spaces (\s covers them in JavaScript).
+  // and hair spaces (\s covers them in JavaScript). The space after the number
+  // of a numbered book may be missing ("1Kor").
   var bookNamesPattern = bookNames.map(function (name) {
-    return escRx(name).replace(/ /g, "\\s+");
+    return escRx(name).replace(/ /g, "\\s+").replace(/^([1-3])\\s\+/, "$1\\s*");
   }).join("|");
+
+  /*
+   * Book names written as phrases, which a fixed alias list cannot cover:
+   *   "Jono pirmas laiškas", "Karalių antroje knygoje"   author + ordinal + type
+   *   "Antroji metraščių knyga", "Pirmas Petro laiškas"  ordinal + author + type
+   *   "Pirmas laiškas tesalonikiečiams", "2-ojo laiško Tesalonikiečiams"
+   *   "Laiške romiečiams", "Evangelijoje pagal Matą"
+   * The lists give the book numbers of the first, second and third book.
+   */
+  var RECIPIENTS = {
+    "romiečiams": [520], "korintiečiams": [530, 540], "galatams": [550],
+    "efeziečiams": [560], "filipiečiams": [570], "kolosiečiams": [580],
+    "tesalonikiečiams": [590, 600], "timotiejui": [610, 620], "titui": [630],
+    "filemonui": [640], "hebrajams": [650], "žydams": [650]
+  };
+  var AUTHORS = {
+    "samuelio": [90, 100], "karalių": [110, 120], "metraščių": [130, 140],
+    "kronikų": [130, 140], "petro": [670, 680], "jono": [690, 700, 710]
+  };
+  var GOSPELS = { "matą": [470], "morkų": [480], "luką": [490], "joną": [500] };
+
+  // Matches either case letter by letter. The i flag would also let short
+  // names like "Gal" or "Kol" match ordinary words.
+  function ciRx(s) {
+    return s.replace(/\p{L}/gu, function (c) {
+      var l = c.toLowerCase(), u = c.toUpperCase();
+      return l === u ? c : "[" + l + u + "]";
+    });
+  }
+  function ciList(table) {
+    return "(?:" + Object.keys(table).map(ciRx).join("|") + ")";
+  }
+
+  var ORD = "(?:[Pp]irm|[Aa]ntr|[Tt]reči?)\\p{L}{0,6}|[1-3](?:\\s*-\\s*\\p{L}{1,5})?";
+  var LETTER = "[Ll]aišk\\p{L}{0,3}";
+  var TYPE = "(?:[Kk]nyg\\p{L}{0,4}|" + LETTER + ")";
+  var phraseForms = [
+    { rx: "(" + ORD + ")\\s+" + LETTER + "\\s+(" + ciList(RECIPIENTS) + ")", ord: 1, name: 2, table: RECIPIENTS },
+    { rx: LETTER + "\\s+(" + ciList(RECIPIENTS) + ")", name: 1, table: RECIPIENTS },
+    { rx: "(" + ciList(AUTHORS) + ")\\s+(" + ORD + ")\\s+" + TYPE, ord: 2, name: 1, table: AUTHORS },
+    { rx: "(" + ORD + ")\\s+(" + ciList(AUTHORS) + ")\\s+" + TYPE, ord: 1, name: 2, table: AUTHORS },
+    { rx: "[Ee]vangelij\\p{L}{0,3}\\s+pagal\\s+(" + ciList(GOSPELS) + ")", name: 1, table: GOSPELS }
+  ];
+  phraseForms.forEach(function (f) {
+    f.full = new RegExp("^" + f.rx + "$", "u");
+  });
+  var phrasePattern = phraseForms.map(function (f) {
+    return f.rx.replace(/\((?!\?)/g, "(?:");
+  }).join("|");
+
+  function resolvePhrase(s) {
+    for (var i = 0; i < phraseForms.length; i++) {
+      var f = phraseForms[i];
+      var m = f.full.exec(s);
+      if (!m) continue;
+      var nums = f.table[m[f.name].toLowerCase()];
+      if (!f.ord) return nums.length === 1 ? nums[0] : null;
+      var c = m[f.ord].charAt(0).toLowerCase();
+      var n = c === "p" || c === "1" ? 1 : c === "a" || c === "2" ? 2 : 3;
+      return nums[n - 1] || null;
+    }
+    return null;
+  }
+
+  function lookupBook(name) {
+    name = normName(name);
+    return bookMap[name] || resolvePhrase(name);
+  }
+
+  var namesPattern = phrasePattern + "|" + bookNamesPattern;
 
   // Also build a quick-test regex to check if a string starts with a book name
   // NOTE: \b does NOT work with Lithuanian Unicode chars (ų, ė, š etc.)
   // so we use a lookahead for whitespace, separator, digit, or end of string
-  var bookStartRx = new RegExp("^(?:" + bookNamesPattern + ")(?=\\s|[,.:;)\\]]|\\d|$)", "u");
+  var bookStartRx = new RegExp("^(?:" + namesPattern + ")(?=\\s|[,.:;)\\]]|\\d|$)", "u");
+
+  // Books with one chapter are cited by verse alone: "Judo 14", "3 Jono 2".
+  var SINGLE_CHAPTER = { 380: true, 640: true, 700: true, 710: true, 720: true };
+
+  function singleChapterRef(bookNum, ref) {
+    if (!SINGLE_CHAPTER[bookNum] || ref.verseStart !== null) return ref;
+    if (ref.mode === "chapter_range") {
+      ref.verseStart = ref.chapter;
+      ref.verseEnd = ref.chapterEnd;
+    } else if (ref.chapter > 1) {
+      ref.verseStart = ref.chapter;
+    } else {
+      return ref;
+    }
+    ref.chapter = 1;
+    ref.chapterEnd = null;
+    ref.mode = "normal";
+    return ref;
+  }
 
   /*
    * Master reference regex.
@@ -68,8 +160,10 @@
    *   Book 23-25 skyriuose → chapter range + LT  (G2=23, G6=25)
    */
   var refPattern = new RegExp(
-    "(" + bookNamesPattern + ")" +       // G1: book name
-    "(?:\\s+knygos?|\\s+knyga)?" +       // optional "knygos"/"knyga"
+    "(" + namesPattern + ")" +           // G1: book name
+    // optional type word in any case: "Pradžios knygoje", "Izaijo pranašystė",
+    // "Jokūbo laišku", "Mato evangelijoje"
+    "(?:\\s+(?:[Kk]nyg|[Pp]ranašyst|" + LETTER + "|[Ee]vangelij)\\p{L}{0,4})?" +
     "\\s+" +                              // required space
     "(\\d{1,3})" +                        // G2: chapter
     "(?:" +
@@ -184,7 +278,9 @@
      ═══════════════════════════════════════════════ */
 
   function processTextNode(textNode) {
-    var text = textNode.nodeValue;
+    // Soft hyphens split book names ("Ap&shy;reiškimas"); a node that gets a
+    // reference is rebuilt without them.
+    var text = textNode.nodeValue.replace(/\u00AD/g, "");
     if (!text || text.trim().length < 3 || !/\d/.test(text)) return;
 
     refPattern.lastIndex = 0;
@@ -196,10 +292,17 @@
 
     while ((match = refPattern.exec(text)) !== null) {
       var bookName = match[1];
-      var bookNum = bookMap[normName(bookName)];
+      var bookNum = lookupBook(bookName);
       if (!bookNum) continue;
 
-      var ref = parseRef(match[2], match[3], match[4], match[5], match[6]);
+      // "12 Tim 5" is not 2 Timothy.
+      if (/^\d/.test(bookName) && /\d/.test(text.charAt(match.index - 1))) continue;
+
+      // "Jono laiškas" is one of John's letters, not his Gospel.
+      if (bookNum >= 470 && bookNum <= 500 &&
+          /^\s+[Ll]aišk/.test(match[0].substring(bookName.length))) continue;
+
+      var ref = singleChapterRef(bookNum, parseRef(match[2], match[3], match[4], match[5], match[6]));
 
       // Basic validation
       if (ref.chapter < 1 || ref.chapter > 200) continue;
@@ -296,7 +399,7 @@
         var cMatch = contRefRx.exec(afterSemi);
         if (!cMatch || cMatch.index !== 0) break;
 
-        var cRef = parseRef(cMatch[1], cMatch[2], cMatch[3], cMatch[4], cMatch[5]);
+        var cRef = singleChapterRef(bookNum, parseRef(cMatch[1], cMatch[2], cMatch[3], cMatch[4], cMatch[5]));
         if (cRef.chapter < 1 || cRef.chapter > 200) break;
 
         var fullContText = semiMatch[0] + afterSemi.substring(0, cMatch[0].length);
