@@ -259,9 +259,86 @@ class Bible_DB {
     }
 
     /**
+     * Revision of the default alias list. Activation seeds the alias option
+     * only once, so aliases added later are merged in by upgrade_aliases().
+     */
+    const ALIAS_REVISION = 2;
+
+    /**
      * Default Lithuanian aliases
      */
     public static function get_default_aliases() {
+        return array_merge( self::get_base_aliases(), self::get_alias_additions() );
+    }
+
+    /**
+     * Aliases added after the first release, by revision. Spellings and case
+     * forms seen on adventistai.lt; phrase forms such as "Jono pirmas laiškas"
+     * are recognised by bible-frontend.js instead.
+     */
+    public static function get_alias_additions( $since = 1 ) {
+        $revisions = array(
+            2 => array(
+                array( 'alias' => 'Pakartoto įstatymo', 'book_number' => 50 ),
+                array( 'alias' => '1 Metr', 'book_number' => 130 ),
+                array( 'alias' => '2 Metr', 'book_number' => 140 ),
+                array( 'alias' => 'Ezro', 'book_number' => 150 ),
+                array( 'alias' => 'Ezra', 'book_number' => 150 ),
+                array( 'alias' => 'Ezdros', 'book_number' => 150 ),
+                array( 'alias' => 'Psalmyno', 'book_number' => 230 ),
+                array( 'alias' => 'Psalmyne', 'book_number' => 230 ),
+                array( 'alias' => 'Psalmėje', 'book_number' => 230 ),
+                array( 'alias' => 'Koh', 'book_number' => 250 ),
+                array( 'alias' => 'Ekl', 'book_number' => 250 ),
+                array( 'alias' => 'Ezekielio', 'book_number' => 330 ),
+                array( 'alias' => 'Ezekelio', 'book_number' => 330 ),
+                array( 'alias' => 'Ezekielis', 'book_number' => 330 ),
+                array( 'alias' => 'Ezek', 'book_number' => 330 ),
+                array( 'alias' => 'Joėlio', 'book_number' => 360 ),
+                array( 'alias' => 'Apaštalų', 'book_number' => 510 ),
+                array( 'alias' => 'Apaštalų darbuose', 'book_number' => 510 ),
+                array( 'alias' => 'Heb', 'book_number' => 650 ),
+                array( 'alias' => '1 Pet', 'book_number' => 670 ),
+                array( 'alias' => '2 Pet', 'book_number' => 680 ),
+                array( 'alias' => 'Apreiškimas Jonui', 'book_number' => 730 ),
+                array( 'alias' => 'Apreiškime Jonui', 'book_number' => 730 ),
+                array( 'alias' => 'Apreiškimu Jonui', 'book_number' => 730 ),
+                array( 'alias' => 'Apreiškime', 'book_number' => 730 ),
+                array( 'alias' => 'Apreiškimų', 'book_number' => 730 ),
+            ),
+        );
+        $aliases = array();
+        foreach ( $revisions as $revision => $list ) {
+            if ( $revision > $since ) $aliases = array_merge( $aliases, $list );
+        }
+        return $aliases;
+    }
+
+    /**
+     * Adds the aliases of newer revisions to a site's alias list once. Aliases
+     * the site already has, or removes afterwards, are left as they are.
+     */
+    public static function upgrade_aliases() {
+        $revision = (int) get_option( 'bible_alias_revision', 1 );
+        if ( $revision >= self::ALIAS_REVISION ) return;
+
+        $aliases = get_option( 'bible_custom_aliases' );
+        if ( ! is_array( $aliases ) ) $aliases = self::get_base_aliases();
+        $known = array();
+        foreach ( $aliases as $a ) {
+            if ( is_array( $a ) && isset( $a['alias'] ) ) $known[ $a['alias'] ] = true;
+        }
+        foreach ( self::get_alias_additions( $revision ) as $a ) {
+            if ( ! isset( $known[ $a['alias'] ] ) ) $aliases[] = $a;
+        }
+        update_option( 'bible_custom_aliases', $aliases );
+        update_option( 'bible_alias_revision', self::ALIAS_REVISION );
+    }
+
+    /**
+     * Aliases of the first release (revision 1)
+     */
+    private static function get_base_aliases() {
         return array(
             // Pr — Pradžios (10)
             array( 'alias' => 'Pradžios', 'book_number' => 10 ),

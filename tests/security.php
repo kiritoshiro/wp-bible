@@ -24,6 +24,13 @@ bible_check( intval( $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}bible_
 update_option( 'bible_custom_aliases', array( array( 'alias' => 'Custom', 'book_number' => 10 ) ) );
 bible_plugin_activate();
 bible_check( get_option( 'bible_custom_aliases' )[0]['alias'] === 'Custom', 'Reactivation preserves custom aliases' );
+update_option( 'bible_alias_revision', 1 );
+Bible_DB::upgrade_aliases();
+$aliases = wp_list_pluck( get_option( 'bible_custom_aliases' ), 'alias' );
+bible_check( $aliases[0] === 'Custom' && in_array( 'Ezekielio', $aliases, true ), 'Update adds new default aliases and keeps custom ones' );
+update_option( 'bible_custom_aliases', array( array( 'alias' => 'Custom', 'book_number' => 10 ) ) );
+Bible_DB::upgrade_aliases();
+bible_check( count( get_option( 'bible_custom_aliases' ) ) === 1, 'Removed default aliases are not added again' );
 
 $payloads = array(
     '<span onmouseover="alert(1)" style="color:red">verse</span>',

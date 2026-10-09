@@ -4,7 +4,7 @@ Tags: bible, verses, popup, lithuanian, references
 Requires at least: 6.2
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.1.8
+Stable tag: 1.1.9
 License: GPLv2 or later
 
 Automatically detects Bible verse references on your WordPress site and shows a popup with the verse text.
@@ -26,6 +26,11 @@ Bible plugin scans your site content for Bible references and makes them interac
 * `Teisėjų 3,14` — Full Lithuanian names
 
 == Changelog ==
+
+= 1.1.9 =
+* Fixed: more ways of writing book names are recognised, found by scanning adventistai.lt: other spellings ("Ezekielio", "Joėlio", "Ezro", "Heb", "1 Metr"), numbered books without a space ("1Kor", "2Pt"; "1Jn" used to open John's Gospel), names with a type word in any case ("Izaijo pranašystė", "Pradžios knygoje", "Jokūbo laišku"), phrases ("Apreiškimas Jonui", "Jono pirmas laiškas", "Antras laiškas Timotiejui", "Laiške romiečiams", "Evangelijoje pagal Matą") and names broken by soft hyphens.
+* Fixed: one-chapter books cited by verse, such as "Judo 14" or "3 Jn 2", showed "Eilutės nerastos".
+* New default aliases are added once to existing sites after updating. Aliases you removed are not added back.
 
 = 1.1.8 =
 * Fixed: references to numbered books written with a normal or non-breaking space, such as "2 Sam 12,1-7", "1 Kar 22,4-8" or "1 Met 29,10", were not recognised. The book list separates the number with a hair space, and only some books had plain-space aliases. Book names now match with any kind of space between the number and the name.
