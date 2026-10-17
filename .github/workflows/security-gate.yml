@@ -17,7 +17,7 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "7 6 * * 2" # weekly: catches new advisories in unchanged code
+    - cron: "7 6 1 * *" # monthly: ships no third-party dependencies, so only the rule-based baseline re-runs; the rest skip (see the gate job)
   workflow_dispatch:
   workflow_call:
 
@@ -35,10 +35,12 @@ jobs:
 
   regression:
     name: Regression
+    if: github.event_name != 'schedule'
     uses: ./.github/workflows/security.yml
 
   codeql:
     name: CodeQL
+    if: github.event_name != 'schedule'
     uses: ./.github/workflows/codeql.yml
     permissions:
       contents: read
@@ -46,6 +48,7 @@ jobs:
 
   wordpress:
     name: WordPress
+    if: github.event_name != 'schedule'
     uses: ./.github/workflows/wordpress-checks.yml
 
   gate:
@@ -59,6 +62,7 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
           EVENT: ${{ github.event_name }}
+          SCHEDULE_SKIPS: regression codeql wordpress
         run: |
           set -euo pipefail
           failed=0
@@ -68,6 +72,13 @@ jobs:
             # only check that legitimately skips (push/schedule/dispatch/release).
             if [ "$job" = "dependency-review" ] && [ "$EVENT" != "pull_request" ] && [ "$result" = "skipped" ]; then
               echo "$job: skipped (PR-only check)"
+              continue
+            fi
+            # The scheduled run re-runs only the scans whose rules or advisory
+            # data change while the code does not; these deterministic checks
+            # skip on it by design (they run on every PR, push and release).
+            if [ "$EVENT" = "schedule" ] && [ "$result" = "skipped" ] && [[ " $SCHEDULE_SKIPS " == *" $job "* ]]; then
+              echo "$job: skipped (not part of the scheduled scan)"
               continue
             fi
             echo "$job: $result"
