@@ -115,6 +115,9 @@ class Bible_GitHub_Updater {
                     && 'github.com' === ( $browser_parts['host'] ?? '' )
                     && '/kiritoshiro/wp-bible/releases/download/' . rawurlencode( $release['tag_name'] ) . '/bible.zip' === ( $browser_parts['path'] ?? '' )
                     && $browser_url === 'https://github.com/' . self::REPOSITORY . '/releases/download/' . rawurlencode( $release['tag_name'] ) . '/bible.zip'
+                    // GitHub computes this digest on upload; a release without it is not offered.
+                    && is_string( $candidate['digest'] ?? null )
+                    && preg_match( '/^sha256:[a-f0-9]{64}$/D', $candidate['digest'] )
                     && $size > 0
                     && $size <= self::MAX_PACKAGE_SIZE
                 ) {
@@ -259,11 +262,12 @@ class Bible_GitHub_Updater {
                 return new WP_Error( 'bible_github_download_failed', 'Could not download the GitHub release asset.' );
             }
             clearstatcache( true, $temporary_file );
+            // The digest is mandatory: an absent or malformed digest fails closed.
             $digest = $asset['digest'] ?? '';
             if ( filesize( $temporary_file ) !== intval( $asset['size'] ) ||
                 file_get_contents( $temporary_file, false, null, 0, 4 ) !== "PK\x03\x04" ||
-                ( $digest !== '' && ( ! is_string( $digest ) || ! preg_match( '/^sha256:[a-f0-9]{64}$/D', $digest ) ||
-                    ! hash_equals( substr( $digest, 7 ), hash_file( 'sha256', $temporary_file ) ) ) ) ) {
+                ! is_string( $digest ) || ! preg_match( '/^sha256:[a-f0-9]{64}$/D', $digest ) ||
+                ! hash_equals( substr( $digest, 7 ), hash_file( 'sha256', $temporary_file ) ) ) {
                 return new WP_Error( 'bible_github_package_invalid', 'The release package size, ZIP header, or SHA-256 checksum is invalid.' );
             }
             // WordPress core validates and unpacks the archive after this hook.
