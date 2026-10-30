@@ -164,6 +164,21 @@ $release['assets'][0]['digest'] = 'sha256:' . str_repeat( '0', 64 );
 delete_site_transient( Bible_GitHub_Updater::RELEASE_CACHE_KEY );
 $result = $updater->download_private_release( false, $package, null, array() );
 bible_check( is_wp_error( $result ) && ! file_exists( end( $tempfiles ) ), 'Checksum mismatch rejected and cleaned up' );
+// The digest is mandatory: without a valid sha256 digest no update is offered or downloaded.
+foreach ( array( 'missing' => null, 'empty' => '', 'malformed' => 'sha1:' . sha1( $body ) ) as $case => $digest ) {
+    if ( null === $digest ) {
+        unset( $release['assets'][0]['digest'] );
+    } else {
+        $release['assets'][0]['digest'] = $digest;
+    }
+    delete_site_transient( Bible_GitHub_Updater::RELEASE_CACHE_KEY );
+    $updates = $updater->filter_plugin_updates( (object) array() );
+    bible_check( ! isset( $updates->response[ plugin_basename( BIBLE_PLUGIN_FILE ) ] ), 'Release with ' . $case . ' digest not offered' );
+    $downloads = count( $tempfiles );
+    $result = $updater->download_private_release( false, $package, null, array() );
+    bible_check( is_wp_error( $result ) && 'bible_github_release_unavailable' === $result->get_error_code() && count( $tempfiles ) === $downloads, 'Release with ' . $case . ' digest refused before download' );
+}
+$release['assets'][0]['digest'] = 'sha256:' . hash( 'sha256', $body );
 remove_filter( 'pre_http_request', $mock );
 // "Check again" (update-core.php?force-check=1) drops the cached release, for plugin updaters only.
 $admin = get_user_by( 'login', 'audit' );

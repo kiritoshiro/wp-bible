@@ -27,6 +27,9 @@ Bible plugin scans your site content for Bible references and makes them interac
 
 == Changelog ==
 
+= Unreleased =
+* Security: an update is installed only when the downloaded bible.zip matches the SHA-256 digest that GitHub's release API reports for it. A release without a valid digest is no longer offered; before, the checksum was skipped when the digest was missing.
+
 = 1.1.9 =
 * Fixed: more ways of writing book names are recognised, found by scanning adventistai.lt: other spellings ("Ezekielio", "Joėlio", "Ezro", "Heb", "1 Metr"), numbered books without a space ("1Kor", "2Pt"; "1Jn" used to open John's Gospel), names with a type word in any case ("Izaijo pranašystė", "Pradžios knygoje", "Jokūbo laišku"), phrases ("Apreiškimas Jonui", "Jono pirmas laiškas", "Antras laiškas Timotiejui", "Laiške romiečiams", "Evangelijoje pagal Matą") and names broken by soft hyphens.
 * Fixed: one-chapter books cited by verse, such as "Judo 14" or "3 Jn 2", showed "Eilutės nerastos".
